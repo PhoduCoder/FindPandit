@@ -1,0 +1,143 @@
+pipeline {
+    agent any
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+        timeout(time: 1, unit: 'HOURS')
+        skipDefaultCheckout true
+    }
+
+    triggers {
+        github(triggerOnPush: true, triggerOnPullRequest: true)
+    }
+
+    stages {
+        stage('Build') {
+            when {
+                branch 'feature/*'
+            }
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+        stage('Dockerize') {
+            when {
+                branch 'feature/*'
+            }
+            steps {
+                sh 'docker build -t my-image .'
+                sh 'docker push my-image'
+            }
+        }
+        stage('Deploy to Preprod') {
+            when {
+                branch 'feature/*'
+            }
+            steps {
+                sh 'kubectl apply -f preprod.yaml'
+            }
+        }
+        stage('Approval') {
+            when {
+                branch 'main'
+            }
+            steps {
+                input message: 'Approve for production deploy?'
+            }
+        }
+        stage('Deploy to Prod') {
+            when {
+                branch 'main'
+            }
+            steps {
+                sh 'kubectl apply -f prod.yaml'
+            }
+        }
+    }
+}
+EXPLANATION
+========
+This Jenkinsfile uses github triggers to trigger the pipeline on push and pull request events.
+Ensure that you have configured the Jenkins GitHub plugin and have set up the necessary credentials to interact with your GitHub repository.
+Rest of the pipeline is same as previous pipeline, like it assumes that the kubeconfig and the necessary credentials are already setup in the Jenkins server, the project has a preprod and prod yaml files named preprod.yaml and prod.yaml, the image is pushed to a ECR repo named 'my-image', the stages are executed based on the branch name, in this example it assumes that all feature branches starts with 'feature/'
+The deploy to prod stage is a manual approval stage, where someone has to approve the deploy to the prod cluster.
+
+=======
+
+
+Further Advanced Jenkins Pipeline using Shared Library
+
+@Library('my-shared-library') _
+
+pipeline {
+    agent any
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+        timeout(time: 1, unit: 'HOURS')
+        skipDefaultCheckout true
+    }
+
+    triggers {
+        github(triggerOnPush: true, triggerOnPullRequest: true)
+    }
+
+    stages {
+        stage('Build') {
+            when {
+                branch 'feature/*'
+            }
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+        stage('Dockerize') {
+            when {
+                branch 'feature/*'
+            }
+            steps {
+                sh 'docker build -t my-image .'
+                pushToECR(image: 'my-image')
+            }
+        }
+        stage('Deploy to Preprod') {
+            when {
+                branch 'feature/*'
+            }
+            steps {
+                deployToK8s(env: 'preprod')
+            }
+        }
+        stage('Approval') {
+            when {
+                branch 'main'
+            }
+            steps {
+                input message: 'Approve for production deploy?'
+            }
+        }
+        stage('Deploy to Prod') {
+            when {
+                branch 'main'
+            }
+            steps {
+                deployToK8s(env: 'prod')
+            }
+        }
+    }
+}
+
+========
+This Jenkinsfile assumes that you have created a shared library named my-shared-library that contains the following steps:
+
+pushToECR(image: String): This step takes an image name as an argument and pushes it to an ECR repository. You'll need to configure the necessary credentials for your ECR repository in Jenkins.
+deployToK8s(env: String): This step takes an environment name (e.g. 'preprod' or 'prod') as an argument and deploys the application to the corresponding Kubernetes cluster. You'll need to configure the necessary credentials for your Kubernetes cluster in Jenkins.
+You can also include other shared steps in your shared library that can be used by other pipelines in your organization, such as steps for testing, linting, and so on.
+
+Note:
+
+The Jenkinsfile uses the @Library annotation to import the shared library, and then uses the steps defined in the shared library (pushToECR and deployToK8s) in the pipeline stages.
+This Jenkinsfile uses the github triggers to trigger the pipeline on push and pull request events.
+The rest of the pipeline is same as previous pipeline, like it assumes that the kubeconfig and the necessary credentials are already setup in the Jenkins server, the project has a preprod and prod yaml files named preprod.yaml and prod.yaml, the stages are executed based on the branch name, in this example it assumes that all feature branches starts with 'feature/'
+The deploy to prod stage is a manual approval stage, where someone has to approve the deploy to the prod cluster.
+========
