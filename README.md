@@ -1,5 +1,6 @@
 # FindPandit
-# Repository to create an application that helps to find pandit in USA
+# An application that helps to find pandit for NRIs in USA
+# This is a sample Flask Application. 
 
 #To run the flask server locally 
 export FLASK_APP=app.py
