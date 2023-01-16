@@ -1,0 +1,131 @@
+pipeline {
+    agent any
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+        timeout(time: 1, unit: 'HOURS')
+        skipDefaultCheckout true
+    }
+
+    triggers {
+        github(triggerOnPush: true, triggerOnPullRequest: true)
+    }
+
+    stages {
+        stage('Build') {
+            when {
+                branch 'feature/*'
+            }
+            steps {
+                sh 'mvn clean install'
+            }
+        }
+        stage('Dockerize') {
+            when {
+                branch 'feature/*'
+            }
+            steps {
+                sh 'docker build -t my-image .'
+            }
+        }
+        stage('Functional Test') {
+            when {
+                branch 'feature/*'
+            }
+            steps {
+                sh 'docker run my-image functional_tests.sh'
+            }
+        }
+        stage('Security Test') {
+            when {
+                branch 'feature/*'
+            }
+            steps {
+                sh 'docker run my-image security_tests.sh'
+            }
+        }
+        stage('Merge to Main') {
+            when {
+                branch 'feature/*'
+            }
+            steps {
+                sh 'git checkout main'
+                sh 'git merge feature/myfeature'
+                sh 'git push origin main'
+            }
+        }
+        stage('Trigger Downstream Pipeline') {
+            when {
+                branch 'main'
+            }
+            steps {
+                build job: 'downstream-pipeline'
+            }
+        }
+    }
+}
+
+This example uses the build step to trigger the downstream pipeline job named 'downstream-pipeline' after the completion of the upstream pipeline stages. This assumes that the downstream pipeline job is already created in Jenkins and the necessary plugin installed.
+
+It's important to note that the pipeline plugin "build pipeline plugin" is not bundled with Jenkins and needs to be installed from the Jenkins plugin manager. Also, the plugin requires the Jenkins jobs to be configured as pipelines.
+
+ You can use the build step to trigger another Jenkins job after the completion of the current job.
+
+ ====
+ stage('Trigger Downstream Pipeline') {
+    when {
+        branch 'main'
+    }
+    steps {
+        build job: 'downstream-pipeline', parameters: [string(name: 'param1', value: 'param1Value')]
+    }
+}
+=====
+
+pipeline {
+    agent any
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '5'))
+        timeout(time: 1, unit: 'HOURS')
+        skipDefaultCheckout true
+    }
+
+    triggers {
+        upstream(upstreamProjects: 'upstream-pipeline', threshold: hudson.model.Result.SUCCESS)
+    }
+
+    parameters {
+        string(name: 'param1', defaultValue: '', description: 'parameter passed from upstream pipeline')
+    }
+
+    stages {
+        stage('Deploy to EKS') {
+            steps {
+                sh 'aws eks update-kubeconfig --name my-cluster'
+                sh 'kubectl apply -f canary.yaml'
+                sh 'kubectl rollout status deployment/my-deployment'
+            }
+        }
+        stage('Canary Deployment') {
+            steps {
+                script {
+                    def canary_percentage = 10
+                    def canary_interval = 5
+                    for (int i = 1; i <= canary_percentage; i++) {
+                        sh "kubectl scale deployment/my-deployment --replicas=$i"
+                        sleep canary_interval
+                    }
+                }
+            }
+        }
+        stage('Rollback') {
+            steps {
+                input message: 'Rollback to previous version?'
+                sh 'kubectl rollout undo deployment/my-deployment'
+            }
+        }
+    }
+}
+
+=====
+
