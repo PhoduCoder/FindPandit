@@ -141,3 +141,37 @@ This Jenkinsfile uses the github triggers to trigger the pipeline on push and pu
 The rest of the pipeline is same as previous pipeline, like it assumes that the kubeconfig and the necessary credentials are already setup in the Jenkins server, the project has a preprod and prod yaml files named preprod.yaml and prod.yaml, the stages are executed based on the branch name, in this example it assumes that all feature branches starts with 'feature/'
 The deploy to prod stage is a manual approval stage, where someone has to approve the deploy to the prod cluster.
 ========
+
+ECR Shared Library 
+
+// pushToECR step
+def call(image) {
+    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', accessKeyVariable: 'AWS_ACCESS_KEY', secretKeyVariable: 'AWS_SECRET_KEY']]) {
+        sh "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${awsAccountId}.dkr.ecr.us-east-1.amazonaws.com"
+        sh "docker tag ${image} ${awsAccountId}.dkr.ecr.us-east-1.amazonaws.com/${image}:${env.BUILD_NUMBER}"
+        sh "docker push ${awsAccountId}.dkr.ecr.us-east-1.amazonaws.com/${image}:${env.BUILD_NUMBER}"
+    }
+}
+
+// deployToK8s step
+def call(env) {
+    withCredentials([[$class: 'KubeconfigCredentialsBinding', credentialsId: 'kubeconfig_credentials']]) {
+        sh "kubectl apply -f ${env}.yaml"
+    }
+}
+
+====
+
+In the pushToECR step, it use the withCredentials block to provide the AWS credentials for your ECR repository. It uses the aws ecr get-login-password command to authenticate to ECR, then it tags the image with the build number and pushes it to the ECR repository.
+
+In the deployToK8s step, it use the withCredentials block to provide the kubeconfig credentials for your kubernetes cluster. It uses the kubectl apply command to deploy the application to the cluster.
+
+Note:
+
+This is a sample code and should be modified according to your specific requirements.
+The example above is using AWS ECR, if you are using a different repository, you might need to adjust the steps accordingly.
+It is also using kubectl command to deploy to k8s cluster, if you are using different orchestration tool, you might need to adjust the steps accordingly.
+The sample code assumes that the yaml files for k8s deployment are already present in the Jenkins workspace and are named as 'preprod.yaml' and 'prod.yaml'
+Also the sample code assumes that the credentials for AWS and kubeconfig are already added to jenkins, and the credentials id are 'AWS_ACCESS_KEY','AWS_SECRET_KEY' and 'kubeconfig_credentials' respectively.
+In order to use the shared library, you'll need to create it in Jenkins and make it available to the pipeline.
+=====
