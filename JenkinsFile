@@ -7,16 +7,48 @@ pipeline {
                 sh 'docker build -t my_app .'
             }
         }
-
+        
         stage('Test') {
             steps {
                 sh 'docker run -it --rm my_app pytest'
             }
         }
 
-        stage('Deploy') {
+        stage('Security') {
+            when { branch 'master' }
             steps {
-                sh 'docker push my_app'
+                sh 'docker run -it --rm -v $(pwd):/src -w /src aquasec/trivy --exit-code 1 --quiet --severity CRITICAL my_app'
+                sh 'docker run -it --rm -v $(pwd):/src -w /src owasp/zap2docker-stable zap-baseline.py -t http://localhost'
+            }
+        }
+        
+        stage('Deploy Test') {
+            when {
+                allOf {
+                    branch 'master'
+                    expression { env.BUILD_CAUSE == 'MANUALTRIGGER' }
+                }
+            }
+            steps {
+                script {
+                    def k8sClient = kubernetes.withServerUrl(serverUrl)
+                    k8sClient.createOrReplace(resource: yaml.parse(new File('k8s/test.yml').text), namespace: 'test')
+                }
+            }
+        }
+        
+        stage('Deploy Prod') {
+            when {
+                allOf {
+                    branch 'tags'
+                    expression { env.BUILD_CAUSE == 'MANUALTRIGGER' }
+                }
+            }
+            steps {
+                script {
+                    def k8sClient = kubernetes.withServerUrl(serverUrl)
+                    k8sClient.createOrReplace(resource: yaml.parse(new File('k8s/prod.yml').text), namespace: 'prod')
+                }
             }
         }
     }
