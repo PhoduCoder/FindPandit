@@ -1,0 +1,49 @@
+image: python:3.9
+
+stages:
+  - build
+  - test
+  - security
+  - deploy_test
+  - deploy_prod
+
+build:
+  stage: build
+  script:
+    - docker build -t my_app .
+
+test:
+  stage: test
+  script:
+    - docker run -it --rm my_app pytest
+
+security:
+  stage: security
+  script:
+    - docker run -it --rm -v $(pwd):/src -w /src aquasec/trivy --exit-code 1 --quiet --severity CRITICAL my_app
+    - docker run -it --rm -v $(pwd):/src -w /src owasp/zap2docker-stable zap-baseline.py -t http://localhost
+  only:
+    - master
+
+deploy_test:
+  stage: deploy_test
+  script:
+    - kubectl apply -f k8s/test.yml
+  environment:
+    name: test
+    url: http://test.myapp.com
+  only:
+    - master
+  when: manual
+
+deploy_prod:
+  stage: deploy_prod
+  script:
+    - kubectl apply -f k8s/prod.yml --record
+    - kubectl set image deployment/my-app my-app=my_app:$CI_COMMIT_TAG
+  environment:
+    name: production
+    url: http://myapp.com
+  only:
+    - tags
+  when: manual
